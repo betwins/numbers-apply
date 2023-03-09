@@ -1,3 +1,3 @@
-module numbers-apply
+module github.com/betwins/numbers-apply
 
 go 1.19
