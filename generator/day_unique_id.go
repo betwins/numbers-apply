@@ -129,7 +129,7 @@ func (usage *RangeUsageInfoStruct) GenerateId(prefix string, appName string, biz
 
 	orderId := fmt.Sprintf(constIdFormat, prefix, todayFormat, suffix)
 
-	//logs.Debug("生成的业务编号 {}", orderId)
+	//usage.logs.Debug("生成的业务编号 {}", orderId)
 	return orderId, nil
 }
 
@@ -149,7 +149,7 @@ func (usage *RangeUsageInfoStruct) replaceRange(rangeStart, rangeEnd int64, usag
 	usage.usageM.Lock()
 	defer usage.usageM.Unlock()
 	if usage.applyDate == usageDay && usage.currentRangeEnd >= rangeEnd {
-		usage.logs.Debug("不能用小的号段代替大的段号，直接递增")
+		usage.logs.Debug("不能用小的号段代替大的号段，直接递增")
 		usage.currentMaxId++
 		return usage.currentMaxId
 	}
@@ -164,10 +164,6 @@ func (usage *RangeUsageInfoStruct) replaceRange(rangeStart, rangeEnd int64, usag
 func (usage *RangeUsageInfoStruct) incrementAndGet() int64 {
 	usage.usageM.Lock()
 	defer usage.usageM.Unlock()
-	if usage.currentMaxId >= usage.currentRangeEnd {
-		//号段用完了，还没取到新的，返回无效的0，让后面去用随机算法生成
-		return 0
-	}
 	usage.currentMaxId++
 	return usage.currentMaxId
 }
