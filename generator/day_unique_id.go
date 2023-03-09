@@ -1,6 +1,7 @@
 package generator
 
 import (
+	"errors"
 	"fmt"
 	"math/rand"
 	"sync"
@@ -14,14 +15,14 @@ const (
 	LeastAvailableIdNum = 50 //当剩余可用id数小于这个数时，申请新号段，建议小于步长较多
 )
 
-type applyReqStruct struct {
+type ApplyReq struct {
 	AppName string `json:"appName"` //"申请应用名"
 	BizType string `json:"bizType"` //应用内使用号段的业务类型，业务方需要确保appName + bizType 不与其它申请者重复
 	Day     string `json:"day"`     //"日期格式: 20060102" 号段应用日期，获得的号段会确保该日期内独占（在appName+bizType范围内独点）
 	Step    int    `json:"step"`    //"号段步长" 申请号段的步长, 建议申请步长为1000，或不超过100000
 }
 
-type newRangeRespStruct struct {
+type NewRangeResp struct {
 	RangeStart int64 `json:"rangeStart"`
 	RangeEnd   int64 `json:"rangeEnd"`
 }
@@ -44,7 +45,7 @@ type LogInterface interface {
 	Error(format string, v ...any)
 }
 
-type NumbersReqFunc func(req *applyReqStruct) (*newRangeRespStruct, error)
+type NumbersReqFunc func(req *ApplyReq) (*NewRangeResp, error)
 
 var keyMap = map[byte]byte{
 	'0': 'A',
@@ -66,13 +67,13 @@ func NewRangeUsage(caller NumbersReqFunc, logs LogInterface) *RangeUsageInfoStru
 	}
 }
 
-func (usage *RangeUsageInfoStruct) generateId(prefix string, appName string, bizType string) (string, error) {
+func (usage *RangeUsageInfoStruct) GenerateId(prefix string, appName string, bizType string) (string, error) {
 
 	currentTime := time.Now()
 	var currentId int64
 	//根据当前号段资源，构建订单号
 	todayFormat := currentTime.Format("20060102")
-	req := applyReqStruct{
+	req := ApplyReq{
 		AppName: appName,
 		BizType: bizType,
 		Day:     todayFormat,
@@ -120,7 +121,7 @@ func (usage *RangeUsageInfoStruct) generateId(prefix string, appName string, biz
 		newCh, ok := keyMap[ch]
 		if !ok {
 			usage.logs.Error("生成id映射出错 {} {} {}", uniqueKey, i, ch)
-			return "", newError("id map error")
+			return "", errors.New("id map error")
 		}
 		//newCh := uniqueKey[i] + 'A'
 		suffix = append(suffix, newCh)
@@ -163,11 +164,15 @@ func (usage *RangeUsageInfoStruct) replaceRange(rangeStart, rangeEnd int64, usag
 func (usage *RangeUsageInfoStruct) incrementAndGet() int64 {
 	usage.usageM.Lock()
 	defer usage.usageM.Unlock()
+	if usage.currentMaxId >= usage.currentRangeEnd {
+		//号段用完了，还没取到新的，返回无效的0，让后面去用随机算法生成
+		return 0
+	}
 	usage.currentMaxId++
 	return usage.currentMaxId
 }
 
-func (usage *RangeUsageInfoStruct) getNewIdRange(req *applyReqStruct) (*newRangeRespStruct, bool) {
+func (usage *RangeUsageInfoStruct) getNewIdRange(req *ApplyReq) (*NewRangeResp, bool) {
 
 	var curCounter int32
 	curCounter = atomic.AddInt32(&(usage.gettingIdRangeCounter), 1)
