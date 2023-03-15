@@ -155,7 +155,7 @@ func randId() string {
 func (usage *RangeUsageInfoStruct) replaceRange(rangeStart, rangeEnd int64, usageDay time.Time) int64 {
 	usage.usageM.Lock()
 	defer usage.usageM.Unlock()
-	if usage.applyDate == usageDay && usage.currentRangeEnd >= rangeEnd {
+	if usage.applyDate.Day() == usageDay.Day() && usage.currentRangeEnd >= rangeEnd {
 		usage.logs.Debug("不能用小的号段代替大的号段，直接递增")
 		usage.currentMaxId++
 		return usage.currentMaxId
