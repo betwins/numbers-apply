@@ -90,6 +90,7 @@ func (usage *RangeUsageInfoStruct) GenerateId(prefix, appName, bizType string) (
 			//return "", errcode.IdGenFailed.Error()
 		} else {
 			currentId = usage.replaceRange(resp.RangeStart, resp.RangeEnd, currentTime)
+			usage.logs.Debug("{} {} {} 号段更替，新号段 {} {} {}", appName, bizType, prefix, usage.currentMaxId, usage.currentRangeEnd, usage.applyDate)
 		}
 	} else if usage.currentMaxId+LeastAvailableIdNum > usage.currentRangeEnd {
 		//号段即将用完，获取新号段
@@ -100,6 +101,7 @@ func (usage *RangeUsageInfoStruct) GenerateId(prefix, appName, bizType string) (
 			//return "", errcode.IdGenFailed.Error()
 		} else {
 			currentId = usage.replaceRange(resp.RangeStart, resp.RangeEnd, currentTime)
+			usage.logs.Debug("{} {} {} 号段更替，新号段 {} {} {}", appName, bizType, prefix, usage.currentMaxId, usage.currentRangeEnd, usage.applyDate)
 		}
 	} else {
 		//号段内递增
@@ -158,11 +160,11 @@ func (usage *RangeUsageInfoStruct) replaceRange(rangeStart, rangeEnd int64, usag
 		usage.currentMaxId++
 		return usage.currentMaxId
 	}
-	usage.logs.Debug("号段更替，原号段 {} {} {} {}", usage.currentMaxId, usage.currentRangeEnd, usage.applyDate)
+	usage.logs.Debug("号段更替，原号段 {} {} {}", usage.currentMaxId, usage.currentRangeEnd, usage.applyDate)
 	usage.currentMaxId = rangeStart
 	usage.currentRangeEnd = rangeEnd
 	usage.applyDate = usageDay
-	usage.logs.Debug("号段更替，新号段 {} {} {} {}", usage.currentMaxId, usage.currentRangeEnd, usage.applyDate)
+	usage.logs.Debug("号段更替，新号段 {} {} {}", usage.currentMaxId, usage.currentRangeEnd, usage.applyDate)
 	return usage.currentMaxId
 }
 
