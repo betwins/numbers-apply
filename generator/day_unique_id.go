@@ -36,6 +36,9 @@ type RangeUsageInfoStruct struct {
 	gettingIdRangeCounter int32      //控制并发请求号段
 	reqNumbersCaller      NumbersReqFunc
 	logs                  LogInterface
+	prefix                string
+	bizType               string
+	appName               string
 }
 
 type LogInterface interface {
@@ -60,61 +63,68 @@ var keyMap = map[byte]byte{
 	'9': 'U',
 }
 
-func NewRangeUsage(caller NumbersReqFunc, logs LogInterface) *RangeUsageInfoStruct {
+func NewRangeUsage(caller NumbersReqFunc, logs LogInterface, prefix, bizType string) *RangeUsageInfoStruct {
 	return &RangeUsageInfoStruct{
 		reqNumbersCaller: caller,
 		logs:             logs,
+		prefix:           prefix,
+		bizType:          bizType,
 	}
 }
 
-func (usage *RangeUsageInfoStruct) GenerateId(prefix, appName, bizType string) (string, error) {
+func (usage *RangeUsageInfoStruct) GenerateId(applicationName string) (string, error) {
+
+	if usage.appName == "" {
+		//首次调用设置，后面不再变更，避免同一个实例被应用在不同业务场景中
+		usage.appName = applicationName
+	}
 
 	currentTime := time.Now()
 	var currentId int64
 	//根据当前号段资源，构建订单号
 	todayFormat := currentTime.Format("20060102")
 	req := ApplyReq{
-		AppName: appName,
-		BizType: bizType,
+		AppName: usage.appName,
+		BizType: usage.bizType,
 		Day:     todayFormat,
 		Step:    constIncrementStep,
 	}
 
-	usage.logs.Debug("{} {} {} 请求新的id, 当前号段: {} {} {}", appName, bizType, prefix, usage.applyDate, usage.currentMaxId, usage.currentRangeEnd)
+	usage.logs.Debug("{} {} {} 请求新的id, 当前号段: {} {} {}", usage.appName, usage.bizType, usage.prefix, usage.applyDate, usage.currentMaxId, usage.currentRangeEnd)
 
 	if currentTime.Day() != usage.applyDate.Day() { //新的一天或服务重启了，获取新的号段
-		usage.logs.Debug("{} {} {} 新的一天，取新号段", appName, bizType, prefix)
+		usage.logs.Debug("{} {} {} 新的一天，取新号段", usage.appName, usage.bizType, usage.prefix)
 		resp, bSuccess := usage.getNewIdRange(&req)
 		if !bSuccess {
-			usage.logs.Debug("{} {} {} 当天初始号段已经在获取中，不再重复请求", appName, bizType, prefix)
+			usage.logs.Debug("{} {} {} 当天初始号段已经在获取中，不再重复请求", usage.appName, usage.bizType, usage.prefix)
 			//return "", errcode.IdGenFailed.Error()
 		} else {
 			currentId = usage.replaceRange(resp.RangeStart, resp.RangeEnd, currentTime)
-			usage.logs.Debug("{} {} {} 号段更替，新号段 {} {} {}", appName, bizType, prefix, usage.currentMaxId, usage.currentRangeEnd, usage.applyDate)
+			usage.logs.Debug("{} {} {} 号段更替，新号段 {} {} {}", usage.appName, usage.bizType, usage.prefix, usage.currentMaxId, usage.currentRangeEnd, usage.applyDate)
 		}
 	} else if usage.currentMaxId+LeastAvailableIdNum > usage.currentRangeEnd {
 		//号段即将用完，获取新号段
-		usage.logs.Debug("{} {} {} 当天号段用完了，重新申请", appName, bizType, prefix)
+		usage.logs.Debug("{} {} {} 当天号段用完了，重新申请", usage.appName, usage.bizType, usage.prefix)
 		resp, bSuccess := usage.getNewIdRange(&req)
 		if !bSuccess {
-			usage.logs.Debug("{} {} {} 当天初始号段已经在获取中，不再重复请求", appName, bizType, prefix)
+			usage.logs.Debug("{} {} {} 当天初始号段已经在获取中，不再重复请求", usage.appName, usage.bizType, usage.prefix)
 			//return "", errcode.IdGenFailed.Error()
 		} else {
 			currentId = usage.replaceRange(resp.RangeStart, resp.RangeEnd, currentTime)
-			usage.logs.Debug("{} {} {} 号段更替，新号段 {} {} {}", appName, bizType, prefix, usage.currentMaxId, usage.currentRangeEnd, usage.applyDate)
+			usage.logs.Debug("{} {} {} 号段更替，新号段 {} {} {}", usage.appName, usage.bizType, usage.prefix, usage.currentMaxId, usage.currentRangeEnd, usage.applyDate)
 		}
 	} else {
 		//号段内递增
 		currentId = usage.incrementAndGet()
-		usage.logs.Debug("{} {} {} 使用已有号段获得的号码 {}", appName, bizType, prefix, currentId)
+		usage.logs.Debug("{} {} {} 使用已有号段获得的号码 {}", usage.appName, usage.bizType, usage.prefix, currentId)
 	}
 
 	if (currentId == 0) || (currentId > usage.currentRangeEnd) {
 		//号段获取失败
 		//当前号段资源已用完且还未请求到新号段（高并发下低概率），降级到随机生成方案
-		usage.logs.Warn("{} {} {} 获取号段失败或等待请求号段中，先降级到随机生成业务编号方案", appName, bizType, prefix)
+		usage.logs.Warn("{} {} {} 获取号段失败或等待请求号段中，先降级到随机生成业务编号方案", usage.appName, usage.bizType, usage.prefix)
 		randSuffix := randId()
-		randOrderId := fmt.Sprintf(constIdFormat, prefix, todayFormat, randSuffix)
+		randOrderId := fmt.Sprintf(constIdFormat, usage.prefix, todayFormat, randSuffix)
 		return randOrderId, nil
 	}
 
@@ -127,14 +137,14 @@ func (usage *RangeUsageInfoStruct) GenerateId(prefix, appName, bizType string) (
 		ch := uniqueKey[i]
 		newCh, ok := keyMap[ch]
 		if !ok {
-			usage.logs.Error("{} {} {} 生成id映射出错 {} {} {}", appName, bizType, prefix, uniqueKey, i, ch)
+			usage.logs.Error("{} {} {} 生成id映射出错 {} {} {}", usage.appName, usage.bizType, usage.prefix, uniqueKey, i, ch)
 			return "", errors.New("id map error")
 		}
 		//newCh := uniqueKey[i] + 'A'
 		suffix = append(suffix, newCh)
 	}
 
-	orderId := fmt.Sprintf(constIdFormat, prefix, todayFormat, suffix)
+	orderId := fmt.Sprintf(constIdFormat, usage.prefix, todayFormat, suffix)
 
 	//usage.logs.Debug("生成的业务编号 {}", orderId)
 	return orderId, nil
