@@ -63,16 +63,16 @@ var keyMap = map[byte]byte{
 	'9': 'U',
 }
 
-func NewRangeUsage(caller NumbersReqFunc, logs LogInterface, prefix, bizType string) *RangeUsageInfoStruct {
+func New(caller NumbersReqFunc, logs LogInterface, prefix string) *RangeUsageInfoStruct {
 	return &RangeUsageInfoStruct{
 		reqNumbersCaller: caller,
 		logs:             logs,
 		prefix:           prefix,
-		bizType:          bizType,
+		bizType:          prefix,
 	}
 }
 
-func (usage *RangeUsageInfoStruct) GenerateId(applicationName string) (string, error) {
+func (usage *RangeUsageInfoStruct) GenerateIdWithAppendPrefix(applicationName string, appendPrefix string) (string, error) {
 
 	if usage.appName == "" {
 		//首次调用设置，后面不再变更，避免同一个实例被应用在不同业务场景中
@@ -119,12 +119,16 @@ func (usage *RangeUsageInfoStruct) GenerateId(applicationName string) (string, e
 		usage.logs.Debug("{} {} {} 使用已有号段获得的号码 {}", usage.appName, usage.bizType, usage.prefix, currentId)
 	}
 
+	var finalPrefix = usage.prefix
+	if appendPrefix != "" {
+		finalPrefix = usage.prefix + "-" + appendPrefix
+	}
 	if (currentId == 0) || (currentId > usage.currentRangeEnd) {
 		//号段获取失败
 		//当前号段资源已用完且还未请求到新号段（高并发下低概率），降级到随机生成方案
 		usage.logs.Warn("{} {} {} 获取号段失败或等待请求号段中，先降级到随机生成业务编号方案", usage.appName, usage.bizType, usage.prefix)
 		randSuffix := randId()
-		randOrderId := fmt.Sprintf(constIdFormat, usage.prefix, todayFormat, randSuffix)
+		randOrderId := fmt.Sprintf(constIdFormat, finalPrefix, todayFormat, randSuffix)
 		return randOrderId, nil
 	}
 
@@ -144,10 +148,14 @@ func (usage *RangeUsageInfoStruct) GenerateId(applicationName string) (string, e
 		suffix = append(suffix, newCh)
 	}
 
-	orderId := fmt.Sprintf(constIdFormat, usage.prefix, todayFormat, suffix)
+	orderId := fmt.Sprintf(constIdFormat, finalPrefix, todayFormat, suffix)
 
 	//usage.logs.Debug("生成的业务编号 {}", orderId)
 	return orderId, nil
+}
+
+func (usage *RangeUsageInfoStruct) GenerateId(applicationName string) (string, error) {
+	return usage.GenerateIdWithAppendPrefix(applicationName, "")
 }
 
 func randId() string {
