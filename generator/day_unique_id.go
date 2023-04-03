@@ -39,6 +39,8 @@ type RangeUsageInfoStruct struct {
 	prefix                string
 	bizType               string
 	appName               string
+	port                  int //用来区别服务不同实例，降级随机生成方案避免不同实例重复
+	rander                *rand.Rand
 }
 
 type LogInterface interface {
@@ -64,19 +66,25 @@ var keyMap = map[byte]byte{
 }
 
 func New(caller NumbersReqFunc, logs LogInterface, prefix string) *RangeUsageInfoStruct {
+	source := rand.NewSource(time.Now().UnixNano())
+	rander := rand.New(source)
 	return &RangeUsageInfoStruct{
 		reqNumbersCaller: caller,
 		logs:             logs,
 		prefix:           prefix,
 		bizType:          prefix,
+		rander:           rander,
 	}
 }
 
-func (usage *RangeUsageInfoStruct) GenerateIdWithAppendPrefix(applicationName string, appendPrefix string) (string, error) {
+func (usage *RangeUsageInfoStruct) GenerateIdWithAppendPrefix(applicationName string, port int, appendPrefix string) (string, error) {
 
 	if usage.appName == "" {
 		//首次调用设置，后面不再变更，避免同一个实例被应用在不同业务场景中
 		usage.appName = applicationName
+	}
+	if usage.port == 0 {
+		usage.port = port
 	}
 
 	currentTime := time.Now()
@@ -127,7 +135,7 @@ func (usage *RangeUsageInfoStruct) GenerateIdWithAppendPrefix(applicationName st
 		//号段获取失败
 		//当前号段资源已用完且还未请求到新号段（高并发下低概率），降级到随机生成方案
 		usage.logs.Warn("{} {} {} 获取号段失败或等待请求号段中，先降级到随机生成业务编号方案", usage.appName, usage.bizType, usage.prefix)
-		randSuffix := randId()
+		randSuffix := usage.randId(usage.port)
 		randOrderId := fmt.Sprintf(constIdFormat, finalPrefix, todayFormat, randSuffix)
 		return randOrderId, nil
 	}
@@ -154,21 +162,47 @@ func (usage *RangeUsageInfoStruct) GenerateIdWithAppendPrefix(applicationName st
 	return orderId, nil
 }
 
-func (usage *RangeUsageInfoStruct) GenerateId(applicationName string) (string, error) {
-	return usage.GenerateIdWithAppendPrefix(applicationName, "")
+func (usage *RangeUsageInfoStruct) GenerateId(applicationName string, port int) (string, error) {
+	return usage.GenerateIdWithAppendPrefix(applicationName, port, "")
 }
 
-func randId() string {
-	rand.Seed(time.Now().UnixNano())
+func (usage *RangeUsageInfoStruct) randId(port int) string {
+	num := usage.rander.Intn(10000000000)
 	suffix := make([]byte, 0)
-	suffix = append(suffix, 'Y') //指定首个为'Y'字符，确保与自增号段空间隔离
-	for i := 0; i < 8; i++ {
-		pos := rand.Intn(26)
+	suffix = append(suffix, 'Y')
+
+	for ; port > 0; port = port / 26 {
+		pos := port % 26
 		pos += 'A'
 		suffix = append(suffix, uint8(pos))
 	}
+	randSuffix := make([]byte, 0)
+	for ; num > 0; num = num / 26 {
+		pos := num % 26
+		pos += 'A'
+		randSuffix = append(randSuffix, uint8(pos))
+	}
+	length := len(randSuffix)
+	for i := 0; i < 8-length; i++ {
+		randSuffix = append(randSuffix, 'A')
+	}
+
+	suffix = append(suffix, randSuffix...)
 	return string(suffix)
 }
+
+//
+//func randId() string {
+//	rand.Seed(time.Now().UnixNano())
+//	suffix := make([]byte, 0)
+//	suffix = append(suffix, 'Y') //指定首个为'Y'字符，确保与自增号段空间隔离
+//	for i := 0; i < 8; i++ {
+//		pos := rand.Intn(26)
+//		pos += 'A'
+//		suffix = append(suffix, uint8(pos))
+//	}
+//	return string(suffix)
+//}
 
 func (usage *RangeUsageInfoStruct) replaceRange(rangeStart, rangeEnd int64, usageDay time.Time) int64 {
 	usage.usageM.Lock()
