@@ -291,7 +291,7 @@ func (usage *RangeUsageInfoStruct) getNewIdRange(req *ApplyReq) (*NewRangeResp, 
 	var curCounter int32
 	curCounter = atomic.AddInt32(&(usage.gettingIdRangeCounter), 1)
 	defer atomic.AddInt32(&(usage.gettingIdRangeCounter), -1)
-	if curCounter > 2 { //已经有请求在进行了，只申请自用号码即可
+	if curCounter > 1 { //已经有请求在进行了，只申请自用号码即可
 		usage.logs.Debug("只申请单次使用号段 {}", curCounter)
 		bUseOnce = true
 		req.Step = 1
